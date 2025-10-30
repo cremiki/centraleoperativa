@@ -1,6 +1,7 @@
 import React, { useContext } from 'react';
 import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 import { AuthProvider, AuthContext } from './contexts/AuthContext';
 import { DataProvider, DataContext } from './contexts/DataContext';
