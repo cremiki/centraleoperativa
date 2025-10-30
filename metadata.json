@@ -1,0 +1,7 @@
+{
+  "name": "GPS Tracking Operations Center",
+  "description": "An online platform for an operations center to monitor GPS tracking devices. It connects to the Mapon API to retrieve real-time data, display devices on a map, manage alarms with persistent audio notifications, handle alarm tickets, and maintain a directory of devices with customer contact information.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
