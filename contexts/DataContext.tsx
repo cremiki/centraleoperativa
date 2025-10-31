@@ -34,7 +34,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [error, setError] = useState<string | null>(null);
     const [isMuted, setIsMuted] = useState<boolean>(false);
     const [alarmToTicket, setAlarmToTicket] = useState<Alarm | null>(null);
-    // FIX: Increased alarm check window on startup from 5 minutes to 120 minutes (2 hours)
     const lastAlarmCheck = useRef<Date>(new Date(Date.now() - 120 * 60 * 1000));
 
 
@@ -79,15 +78,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // --- Fetch Alarms Independently ---
             try {
-                const now = new Date();
+                const tillTime = new Date();
+                // For the initial fetch, use the large 2-hour window.
+                // For all subsequent fetches, this will become a fixed 5-minute look-back window.
                 const fromTime = lastAlarmCheck.current;
-                // Key is no longer needed
-                const newAlarms = await maponService.getAlarms(fromTime, now);
                 
-                // Create a 90-second overlap for the next poll to prevent missing boundary events
-                // due to potential API replication delays.
-                const nextCheckTime = new Date(now.getTime() - 90 * 1000);
-                lastAlarmCheck.current = nextCheckTime;
+                const newAlarms = await maponService.getAlarms(fromTime, tillTime);
+                
+                // After the first poll, switch to a fixed 5-minute look-back window.
+                // This is a robust "trawling" method to catch all alarms, even with significant API delays.
+                const nextFromTime = new Date(tillTime.getTime() - 5 * 60 * 1000);
+                lastAlarmCheck.current = nextFromTime;
 
                 if (newAlarms.length > 0) {
                     setAlarms(prevAlarms => {
