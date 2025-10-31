@@ -111,32 +111,38 @@ class MaponService {
         const fromFormatted = formatDateTimeForMapon(from);
         const tillFormatted = formatDateTimeForMapon(till);
     
-        // Include both address and location data in the API call.
         const maponApiUrl = `https://mapon.com/api/v1/alert/list.json?from=${fromFormatted}&till=${tillFormatted}&include=address,location`;
     
         try {
             const apiResponse = await apiProxy.get(maponApiUrl);
             
-            // The API response for alerts is an object with a "data" property containing the array of alerts.
-            if (apiResponse && Array.isArray(apiResponse.data)) {
-                const alertsList: any[] = apiResponse.data;
-    
-                return alertsList.map((apiAlert: any) => {
-                    // Combine the message and address for a more informative notification.
+            // The Mapon API can have inconsistent response wrappers. This logic robustly finds the array of alerts.
+            // It checks for a nested 'alerts' array (like the 'units' endpoint) first, then falls back to a direct 'data' array.
+            let alertsList: any[] = [];
+            if (apiResponse?.data) {
+                if (apiResponse.data.alerts && Array.isArray(apiResponse.data.alerts)) {
+                    // Handles structure: { "data": { "alerts": [...] } }
+                    alertsList = apiResponse.data.alerts;
+                } else if (Array.isArray(apiResponse.data)) {
+                    // Handles structure: { "data": [...] }
+                    alertsList = apiResponse.data;
+                }
+            }
+
+            if (alertsList.length > 0) {
+                 return alertsList.map((apiAlert: any) => {
                     const messageParts = [];
                     if (apiAlert.msg) messageParts.push(apiAlert.msg.trim());
                     if (apiAlert.address) messageParts.push(apiAlert.address.trim());
                     const message = messageParts.join(' - ') || 'No message provided';
                     
                     return {
-                        // A unique ID is generated from the unit ID and timestamp as the API doesn't provide one.
                         id: `${apiAlert.unit_id}-${apiAlert.time}`,
                         deviceId: apiAlert.unit_id,
-                        timestamp: new Date(apiAlert.time).toISOString(), // Mapon 'time' field
-                        type: apiAlert.alert_type || 'Unknown Type', // Mapon 'alert_type' field
-                        message: message, // Combined message and address
+                        timestamp: new Date(apiAlert.time).toISOString(),
+                        type: apiAlert.alert_type || 'Unknown Type',
+                        message: message,
                         location: {
-                            // Provide fallback coordinates if location data is missing from the response.
                             lat: apiAlert.lat || 0,
                             lng: apiAlert.lng || 0
                         }
@@ -144,7 +150,9 @@ class MaponService {
                 });
             }
             
-            console.warn('Received an unexpected data format for alarms, or no alarms found in window:', apiResponse);
+            if (apiResponse) {
+                console.warn('Received an unexpected data format for alarms, or no alarms were found in the time window. API Response:', apiResponse);
+            }
             return [];
     
         } catch (error) {
