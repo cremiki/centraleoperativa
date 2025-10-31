@@ -18,17 +18,10 @@ const mockDrivers = ['Luigi Bianchi', 'Marco Neri', 'Paolo Blu', 'Sergio Leone',
 const mockDriverPhones = ['+39 333 1234567', '+39 338 7654321', '+39 335 1122334', '+39 347 5566778', '+39 349 8899001', '+39 340 1212121'];
 
 const formatDateTimeForMapon = (date: Date): string => {
-    const pad = (num: number) => num.toString().padStart(2, '0');
-    
-    const year = date.getUTCFullYear();
-    const month = pad(date.getUTCMonth() + 1);
-    const day = pad(date.getUTCDate());
-    
-    const hours = pad(date.getUTCHours());
-    const minutes = pad(date.getUTCMinutes());
-    const seconds = pad(date.getUTCSeconds());
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    // Convert to ISO 8601 format in UTC (e.g., "2024-06-25T15:06:23Z").
+    // This is the unambiguous, standard way to represent time for APIs.
+    // We slice to remove milliseconds, which are not needed.
+    return date.toISOString().slice(0, 19) + "Z";
 };
 
 class MaponService {
