@@ -62,16 +62,24 @@ async function handleMaponProxy(req, res) {
   try {
     const maponResponse = await fetch(finalUrl, { cache: 'no-store' });
     const responseBody = await maponResponse.text();
+
+    // CRITICAL FIX: If Mapon returns an empty body (e.g., no alarms),
+    // prevent a JSON parsing error by returning a valid, structured empty response.
+    if (!responseBody.trim()) {
+        return res.status(200).json({ data: { alerts: [] } });
+    }
+
     let data;
     try {
         data = JSON.parse(responseBody);
     } catch(e) {
-        if (!maponResponse.ok) {
-            const errorMessage = `Mapon API returned a non-JSON error: ${maponResponse.statusText}`;
-            return res.status(maponResponse.status).json({ message: errorMessage, code: maponResponse.status, details: responseBody });
-        }
-        res.setHeader('Content-Type', maponResponse.headers.get('Content-Type') || 'text/plain');
-        return res.status(200).send(responseBody);
+        // If the body is not empty but still not valid JSON, it's an issue with Mapon's response.
+        console.error('Mapon API returned a non-JSON response:', { status: maponResponse.status, body: responseBody });
+        return res.status(502).json({ 
+            message: 'Received an invalid (non-JSON) response from the Mapon API.', 
+            code: 502, 
+            details: responseBody.substring(0, 500) // Truncate long HTML error pages
+        });
     }
 
     if (!maponResponse.ok || data.error) {
