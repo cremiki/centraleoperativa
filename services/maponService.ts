@@ -161,6 +161,26 @@ class MaponService {
         }
     }
     
+    // New method for debugging
+    async getRawAlarms(): Promise<any> {
+        const till = new Date();
+        const from = new Date(till.getTime() - 2 * 60 * 60 * 1000); // Last 2 hours
+
+        const fromFormatted = formatDateTimeForMapon(from);
+        const tillFormatted = formatDateTimeForMapon(till);
+
+        const maponApiUrl = `https://mapon.com/api/v1/alert/list.json?from=${fromFormatted}&till=${tillFormatted}&include=address,location`;
+
+        try {
+            const apiResponse = await apiProxy.get(maponApiUrl);
+            return apiResponse;
+        } catch (error) {
+            console.error('Error fetching raw alarms from API Proxy:', error);
+            // Return error object to be displayed in debugger
+            return { error: (error as Error).message };
+        }
+    }
+
     getUsers(): Promise<User[]> {
         return Promise.resolve(this.users.map(u => {
             const { password, ...userWithoutPassword } = u;
