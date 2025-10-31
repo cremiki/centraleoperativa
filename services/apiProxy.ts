@@ -74,6 +74,36 @@ class ApiProxy {
             throw error;
         }
     }
+
+    async post(body: Record<string, any>): Promise<any> {
+        try {
+            const response = await fetch(PROXY_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                handleApiError(data, response.status);
+            }
+
+            if (data.error) {
+                 handleApiError(data, response.status);
+            }
+            
+            return data;
+
+        } catch (error) {
+             if (error instanceof Error && error.name !== 'AbortError') {
+                 console.error('Network or Proxy POST Error:', error.message);
+                 throw new Error(`Failed to POST to the backend service. Details: ${error.message}`);
+            }
+            throw error;
+        }
+    }
 }
 
 export const apiProxy = new ApiProxy();
