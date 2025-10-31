@@ -39,7 +39,7 @@ export default async function handler(req, res) {
   } else if (req.method === 'POST') {
     return handleDataPersistence(req, res);
   } else {
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return res.status(405).json({ message: 'Method Not Allowed', code: 405 });
   }
 }
 
@@ -48,12 +48,12 @@ export default async function handler(req, res) {
 async function handleMaponProxy(req, res) {
   const { targetUrl } = req.query;
   if (!targetUrl) {
-    return res.status(400).json({ error: 'The "targetUrl" query parameter is required for GET requests.' });
+    return res.status(400).json({ message: 'The "targetUrl" query parameter is required for GET requests.', code: 400 });
   }
 
   const apiKey = process.env.MAPON_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: { code: 500, message: 'API Key is not configured on the server.' }});
+    return res.status(500).json({ message: 'API Key is not configured on the server.', code: 500 });
   }
   
   const finalUrl = `${targetUrl}&key=${apiKey}`;
@@ -66,7 +66,8 @@ async function handleMaponProxy(req, res) {
         data = JSON.parse(responseBody);
     } catch(e) {
         if (!maponResponse.ok) {
-            return res.status(maponResponse.status).json({ error: { code: maponResponse.status, message: `Mapon API returned a non-JSON error: ${maponResponse.statusText}`, details: responseBody }});
+            const errorMessage = `Mapon API returned a non-JSON error: ${maponResponse.statusText}`;
+            return res.status(maponResponse.status).json({ message: errorMessage, code: maponResponse.status, details: responseBody });
         }
         res.setHeader('Content-Type', maponResponse.headers.get('Content-Type') || 'text/plain');
         return res.status(200).send(responseBody);
@@ -74,6 +75,7 @@ async function handleMaponProxy(req, res) {
 
     if (!maponResponse.ok || data.error) {
       console.error('Error from Mapon API:', data.error || `HTTP Status ${maponResponse.status}`);
+      // Forward Mapon's error structure
       return res.status(data.error ? 400 : maponResponse.status).json(data);
     }
     
@@ -81,7 +83,7 @@ async function handleMaponProxy(req, res) {
 
   } catch (error) {
     console.error('Error in proxy function:', error);
-    return res.status(502).json({ error: { code: 502, message: 'The proxy server failed to connect to the Mapon API.', details: error.message }});
+    return res.status(502).json({ message: 'The proxy server failed to connect to the Mapon API.', code: 502, details: error.message });
   }
 }
 
@@ -90,11 +92,16 @@ async function handleMaponProxy(req, res) {
 async function handleDataPersistence(req, res) {
     // Vercel automatically parses the body for POST requests
     if (!req.body) {
-         return res.status(400).json({ error: 'Request body is missing.' });
+         return res.status(400).json({ message: 'Request body is missing.', code: 400 });
     }
     const { action, payload } = req.body;
 
     try {
+        // Check for KV configuration before any operation
+        if (!process.env.KV_URL || !process.env.KV_REST_API_TOKEN) {
+            throw new Error("Server configuration error: The KV database connection details are missing in the environment variables.");
+        }
+
         switch (action) {
             case 'get_clients': {
                 let clients = await kv.get(DB_KEYS.CLIENTS);
@@ -139,10 +146,10 @@ async function handleDataPersistence(req, res) {
             }
 
             default:
-                return res.status(400).json({ error: `Unknown action: ${action}` });
+                return res.status(400).json({ message: `Unknown action: ${action}`, code: 400 });
         }
     } catch (error) {
         console.error(`Error processing action "${action}":`, error);
-        return res.status(500).json({ error: `Server error during action: ${action}`, details: error.message });
+        return res.status(500).json({ message: error.message || `An unexpected server error occurred during action: ${action}`, code: 500 });
     }
 }
