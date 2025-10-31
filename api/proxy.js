@@ -7,11 +7,9 @@
 // 2. Create a Vercel KV database in your Vercel project dashboard.
 // 3. Connect the KV database to your project. This will automatically
 //    set the required environment variables (KV_URL, KV_REST_API_TOKEN, etc.).
-import { createKysely } from '@vercel/kv/kysely';
+import { kv } from '@vercel/kv';
 
-// --- Database Setup ---
-// We define a simple structure for our KV store.
-const db = createKysely();
+// --- Database Keys ---
 const DB_KEYS = {
     CLIENTS: 'gps_app_clients',
     UNIT_OVERRIDES: 'gps_app_unit_overrides',
@@ -90,49 +88,53 @@ async function handleMaponProxy(req, res) {
 
 // --- Data Persistence Logic (for POST requests) ---
 async function handleDataPersistence(req, res) {
+    // Vercel automatically parses the body for POST requests
+    if (!req.body) {
+         return res.status(400).json({ error: 'Request body is missing.' });
+    }
     const { action, payload } = req.body;
 
     try {
         switch (action) {
             case 'get_clients': {
-                let clients = await db.get(DB_KEYS.CLIENTS);
+                let clients = await kv.get(DB_KEYS.CLIENTS);
                 if (!clients) {
                     // First time fetch, populate with mock data and save
-                    await db.set(DB_KEYS.CLIENTS, MOCK_CLIENTS_INITIAL_DATA);
+                    await kv.set(DB_KEYS.CLIENTS, MOCK_CLIENTS_INITIAL_DATA);
                     clients = MOCK_CLIENTS_INITIAL_DATA;
                 }
                 return res.status(200).json({ data: clients });
             }
             case 'save_client': {
-                let clients = await db.get(DB_KEYS.CLIENTS) || [];
+                let clients = await kv.get(DB_KEYS.CLIENTS) || [];
                 const index = clients.findIndex(c => c.id === payload.id);
                 if (index > -1) {
                     clients[index] = payload;
                 } else {
                     clients.push({ ...payload, id: payload.id || Date.now() });
                 }
-                await db.set(DB_KEYS.CLIENTS, clients);
+                await kv.set(DB_KEYS.CLIENTS, clients);
                 return res.status(200).json({ data: payload });
             }
             case 'delete_client': {
-                let clients = await db.get(DB_KEYS.CLIENTS) || [];
+                let clients = await kv.get(DB_KEYS.CLIENTS) || [];
                 const updatedClients = clients.filter(c => c.id !== payload.id);
-                await db.set(DB_KEYS.CLIENTS, updatedClients);
+                await kv.set(DB_KEYS.CLIENTS, updatedClients);
                 return res.status(200).json({ success: true });
             }
              case 'get_unit_overrides': {
-                const overrides = await db.get(DB_KEYS.UNIT_OVERRIDES) || [];
+                const overrides = await kv.get(DB_KEYS.UNIT_OVERRIDES) || [];
                 return res.status(200).json({ data: overrides });
             }
             case 'save_unit_override': {
-                const overridesArray = await db.get(DB_KEYS.UNIT_OVERRIDES) || [];
+                const overridesArray = await kv.get(DB_KEYS.UNIT_OVERRIDES) || [];
                 const overridesMap = new Map(overridesArray);
                 
                 const existing = overridesMap.get(payload.unit_id) || {};
                 const newOverride = { ...existing, ...payload };
                 overridesMap.set(payload.unit_id, newOverride);
 
-                await db.set(DB_KEYS.UNIT_OVERRIDES, Array.from(overridesMap.entries()));
+                await kv.set(DB_KEYS.UNIT_OVERRIDES, Array.from(overridesMap.entries()));
                 return res.status(200).json({ success: true });
             }
 
