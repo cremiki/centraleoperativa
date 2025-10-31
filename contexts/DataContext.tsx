@@ -34,7 +34,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [error, setError] = useState<string | null>(null);
     const [isMuted, setIsMuted] = useState<boolean>(false);
     const [alarmToTicket, setAlarmToTicket] = useState<Alarm | null>(null);
-    const lastAlarmCheck = useRef<Date>(new Date(Date.now() - 5 * 60 * 1000)); // Start check from 5 mins ago
+    // FIX: Increased alarm check window on startup from 5 minutes to 120 minutes (2 hours)
+    const lastAlarmCheck = useRef<Date>(new Date(Date.now() - 120 * 60 * 1000));
 
 
     const fetchData = useCallback(async () => {
