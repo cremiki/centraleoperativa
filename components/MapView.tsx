@@ -5,6 +5,7 @@ import { DataContext } from '../contexts/DataContext';
 import { Unit } from '../types';
 import { UnitDetailPanel } from './UnitDetailPanel';
 import { SearchIcon } from './Icons';
+import { FleetStatusSummary } from './FleetStatusSummary';
 
 const getIcon = (ignition: boolean, speed: number) => {
     const color = ignition ? (speed > 0 ? 'green' : 'orange') : 'red';
@@ -144,6 +145,9 @@ export const MapView: React.FC = () => {
                             ))}
                         </ul>
                     )}
+                </div>
+                 <div className="absolute top-4 right-4 z-[1000]">
+                    <FleetStatusSummary units={units} />
                 </div>
                 <MapContainer center={initialCenter} zoom={6} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
                     <MapController coords={flyToCoords} />
