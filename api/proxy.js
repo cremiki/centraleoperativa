@@ -7,7 +7,8 @@
 // 2. Create a Vercel KV database in your Vercel project dashboard.
 // 3. Connect the KV database to your project. This will automatically
 //    set the required environment variables (KV_URL, KV_REST_API_TOKEN, etc.).
-import { kv } from '@vercel/kv';
+// NOTE: We are NOT importing `@vercel/kv` at the top level anymore to prevent startup crashes
+// if the environment variables are not set. It will be imported dynamically.
 
 // --- Database Keys ---
 const DB_KEYS = {
@@ -53,7 +54,7 @@ async function handleMaponProxy(req, res) {
 
   const apiKey = process.env.MAPON_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ message: 'API Key is not configured on the server.', code: 500 });
+    return res.status(500).json({ message: 'Server configuration error: The MAPON_API_KEY is not configured on the server.', code: 500 });
   }
   
   const finalUrl = `${targetUrl}&key=${apiKey}`;
@@ -90,9 +91,22 @@ async function handleMaponProxy(req, res) {
 
 // --- Data Persistence Logic (for POST requests) ---
 async function handleDataPersistence(req, res) {
+    // PRE-EMPTIVE CHECK: Ensure KV store is configured before proceeding.
+    // This prevents crashes from trying to import/use the @vercel/kv library
+    // when its required environment variables are missing.
+    if (!process.env.KV_URL || !process.env.KV_REST_API_TOKEN) {
+        console.error("KV Environment variables are not set.");
+        return res.status(503).json({ 
+            message: "Server configuration error: The data persistence service is not configured. Please set up the KV database and connect it to this project.", 
+            code: 503 
+        });
+    }
+
     let actionForLogging; // For logging purposes in the catch block
     try {
-        // Robust body check and parsing now inside the try...catch block
+        // DYNAMIC IMPORT: Load the KV library only when we know it's configured.
+        const { kv } = await import('@vercel/kv');
+        
         if (!req.body || typeof req.body !== 'object') {
             return res.status(400).json({ message: 'Request body is missing or is not a valid JSON object.', code: 400 });
         }
@@ -102,11 +116,6 @@ async function handleDataPersistence(req, res) {
 
         if (!action) {
              return res.status(400).json({ message: 'The "action" property is missing in the request body.', code: 400 });
-        }
-
-        // Check for KV configuration before any operation
-        if (!process.env.KV_URL || !process.env.KV_REST_API_TOKEN) {
-            throw new Error("Server configuration error: The KV database connection details are missing in the environment variables.");
         }
 
         switch (action) {
