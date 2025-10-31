@@ -90,13 +90,20 @@ async function handleMaponProxy(req, res) {
 
 // --- Data Persistence Logic (for POST requests) ---
 async function handleDataPersistence(req, res) {
-    // Vercel automatically parses the body for POST requests
-    if (!req.body) {
-         return res.status(400).json({ message: 'Request body is missing.', code: 400 });
-    }
-    const { action, payload } = req.body;
-
+    let actionForLogging; // For logging purposes in the catch block
     try {
+        // Robust body check and parsing now inside the try...catch block
+        if (!req.body || typeof req.body !== 'object') {
+            return res.status(400).json({ message: 'Request body is missing or is not a valid JSON object.', code: 400 });
+        }
+        
+        const { action, payload } = req.body;
+        actionForLogging = action; // Assign for potential error logging
+
+        if (!action) {
+             return res.status(400).json({ message: 'The "action" property is missing in the request body.', code: 400 });
+        }
+
         // Check for KV configuration before any operation
         if (!process.env.KV_URL || !process.env.KV_REST_API_TOKEN) {
             throw new Error("Server configuration error: The KV database connection details are missing in the environment variables.");
@@ -149,7 +156,10 @@ async function handleDataPersistence(req, res) {
                 return res.status(400).json({ message: `Unknown action: ${action}`, code: 400 });
         }
     } catch (error) {
-        console.error(`Error processing action "${action}":`, error);
-        return res.status(500).json({ message: error.message || `An unexpected server error occurred during action: ${action}`, code: 500 });
+        console.error(`Error processing action "${actionForLogging || 'unknown'}":`, error);
+        if (error instanceof TypeError) {
+             return res.status(400).json({ message: 'Invalid request body format. Expected a JSON object.', code: 400 });
+        }
+        return res.status(500).json({ message: error.message || `An unexpected server error occurred during action: ${actionForLogging}`, code: 500 });
     }
 }
