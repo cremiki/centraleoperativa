@@ -23,19 +23,29 @@
 const PROXY_ENDPOINT = '/api/proxy';
 
 const handleApiError = (errorPayload: any, status: number) => {
-    // Use the message from the backend-forwarded error if available
-    let errorMessage = errorPayload.error?.message || errorPayload.message || 'An unknown error occurred.';
-    const errorCode = errorPayload.error?.code || errorPayload.code || status;
+    // Prioritize the specific message from our own backend proxy or a Mapon error.
+    let errorMessage = errorPayload.message || errorPayload.error?.message;
+    const errorCode = errorPayload.code || errorPayload.error?.code || status;
 
-    // Keep specific Mapon error code interpretations
-    switch(errorCode) {
-        case 2: errorMessage = 'Service unavailable or in maintenance (Mapon).'; break;
-        case 3: errorMessage = 'Invalid parameters sent to Mapon API.'; break;
-        case 10: errorMessage = 'Invalid API key. Please check the key configured in the backend environment.'; break;
-        case 1005: errorMessage = 'Access Denied by Mapon.'; break;
-        case 500: errorMessage = 'Server configuration error. The API key might be missing on the backend.'; break;
-        case 502: errorMessage = 'Bad Gateway. The backend proxy could not connect to the Mapon API.'; break;
+    // If the backend didn't provide a specific message, use a default based on the code.
+    if (!errorMessage) {
+        switch(errorCode) {
+            case 2: errorMessage = 'Service unavailable or in maintenance (Mapon).'; break;
+            case 3: errorMessage = 'Invalid parameters sent to Mapon API.'; break;
+            case 10: errorMessage = 'Invalid API key. Please check the key configured in the backend environment.'; break;
+            case 1005: errorMessage = 'Access Denied by Mapon.'; break;
+            // The default message for 500 is now more generic, as a specific error should be sent by the backend.
+            case 500: errorMessage = 'An internal server error occurred.'; break;
+            case 502: errorMessage = 'Bad Gateway: The server could not connect to an upstream service.'; break;
+            default: errorMessage = 'An unknown error occurred.';
+        }
     }
+
+    // Append details if provided by the backend.
+    if (errorPayload.details) {
+      errorMessage += `. Details: ${errorPayload.details}`;
+    }
+
     throw new Error(`API Error: ${errorMessage} (Code: ${errorCode})`);
 };
 
