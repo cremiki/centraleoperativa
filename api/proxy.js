@@ -1,88 +1,146 @@
 // File: /api/proxy.js
-// This is a serverless function that will be deployed as part of the Vercel project.
+// This is a serverless function that acts as both a secure proxy to Mapon
+// and a data persistence layer using a serverless Key-Value store (like Vercel KV).
 
+// IMPORTANT: To make this work, you need to:
+// 1. `npm install @vercel/kv`
+// 2. Create a Vercel KV database in your Vercel project dashboard.
+// 3. Connect the KV database to your project. This will automatically
+//    set the required environment variables (KV_URL, KV_REST_API_TOKEN, etc.).
+import { createKysely } from '@vercel/kv/kysely';
+
+// --- Database Setup ---
+// We define a simple structure for our KV store.
+const db = createKysely();
+const DB_KEYS = {
+    CLIENTS: 'gps_app_clients',
+    UNIT_OVERRIDES: 'gps_app_unit_overrides',
+};
+const MOCK_CLIENTS_INITIAL_DATA = [
+    { id: 101, company: 'Logistics Inc.', contactPerson: 'Mario Rossi', phone: '+39 02 1234567', email: 'mario.rossi@logistics.inc' },
+    { id: 102, company: 'Transporti Veloci', contactPerson: 'Giulia Verdi', phone: '+39 06 7654321', email: 'giulia.verdi@transportiveloci.it' },
+    { id: 103, company: 'Courier Express', contactPerson: 'Luca Gialli', phone: '+39 055 9876543', email: 'luca.gialli@courierexpress.com' },
+    { id: 104, company: 'Alpine Haulers', contactPerson: 'Franco Moro', phone: '+39 011 4567890', email: 'franco.moro@alpinehaulers.com' }
+];
+
+
+// --- Main Handler ---
 export default async function handler(req, res) {
-  // Allow requests from any origin. For production, you should restrict this
-  // to your actual frontend's domain for better security.
-  // Example: res.setHeader('Access-Control-Allow-Origin', 'https://your-app-domain.vercel.app');
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Handle preflight OPTIONS requests for CORS
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
-  // 1. Extract the target Mapon URL from the query parameter.
-  const { targetUrl } = req.query;
+  // Route requests based on method
+  if (req.method === 'GET') {
+    return handleMaponProxy(req, res);
+  } else if (req.method === 'POST') {
+    return handleDataPersistence(req, res);
+  } else {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+}
 
+
+// --- Mapon Proxy Logic (for GET requests) ---
+async function handleMaponProxy(req, res) {
+  const { targetUrl } = req.query;
   if (!targetUrl) {
-    return res.status(400).json({ error: 'The "targetUrl" query parameter is required.' });
+    return res.status(400).json({ error: 'The "targetUrl" query parameter is required for GET requests.' });
   }
 
-  // 2. Securely retrieve the Mapon API key from the server's environment variables.
-  // This key is NEVER exposed to the frontend.
   const apiKey = process.env.MAPON_API_KEY;
-
   if (!apiKey) {
-    // This error indicates a server misconfiguration, not a client error.
-    return res.status(500).json({ 
-      error: { 
-        code: 500, 
-        message: 'API Key is not configured on the server. The MAPON_API_KEY environment variable is missing.' 
-      }
-    });
+    return res.status(500).json({ error: { code: 500, message: 'API Key is not configured on the server.' }});
   }
   
-  // 3. Construct the final URL for the Mapon API call, appending the secret key.
   const finalUrl = `${targetUrl}&key=${apiKey}`;
 
   try {
-    // 4. Perform the fetch call from the server to the Mapon API.
-    // Added { cache: 'no-store' } to prevent any potential caching issues.
     const maponResponse = await fetch(finalUrl, { cache: 'no-store' });
-    const responseBody = await maponResponse.text(); // Read body once
-
-    // Try to parse as JSON, but handle cases where it might not be
+    const responseBody = await maponResponse.text();
     let data;
     try {
         data = JSON.parse(responseBody);
     } catch(e) {
-        // If parsing fails, it could be a non-JSON error response from Mapon or the network
         if (!maponResponse.ok) {
-            return res.status(maponResponse.status).json({ 
-                error: {
-                    code: maponResponse.status,
-                    message: `Mapon API returned a non-JSON error: ${maponResponse.statusText}`,
-                    details: responseBody
-                }
-            });
+            return res.status(maponResponse.status).json({ error: { code: maponResponse.status, message: `Mapon API returned a non-JSON error: ${maponResponse.statusText}`, details: responseBody }});
         }
-        // If response was OK but not JSON, forward it as is
         res.setHeader('Content-Type', maponResponse.headers.get('Content-Type') || 'text/plain');
         return res.status(200).send(responseBody);
     }
 
-
-    // 5. Check if the response from Mapon indicates an error (either a network error or a specific Mapon error payload).
     if (!maponResponse.ok || data.error) {
       console.error('Error from Mapon API:', data.error || `HTTP Status ${maponResponse.status}`);
       return res.status(data.error ? 400 : maponResponse.status).json(data);
     }
     
-    // 6. Forward the successful JSON response from Mapon back to our frontend.
-    res.setHeader('Content-Type', 'application/json');
     return res.status(200).json(data);
 
   } catch (error) {
     console.error('Error in proxy function:', error);
-    return res.status(502).json({ // 502 Bad Gateway is appropriate here
-        error: {
-            code: 502,
-            message: 'The proxy server failed to connect to the Mapon API.',
-            details: error.message
-        }
-    });
+    return res.status(502).json({ error: { code: 502, message: 'The proxy server failed to connect to the Mapon API.', details: error.message }});
   }
+}
+
+
+// --- Data Persistence Logic (for POST requests) ---
+async function handleDataPersistence(req, res) {
+    const { action, payload } = req.body;
+
+    try {
+        switch (action) {
+            case 'get_clients': {
+                let clients = await db.get(DB_KEYS.CLIENTS);
+                if (!clients) {
+                    // First time fetch, populate with mock data and save
+                    await db.set(DB_KEYS.CLIENTS, MOCK_CLIENTS_INITIAL_DATA);
+                    clients = MOCK_CLIENTS_INITIAL_DATA;
+                }
+                return res.status(200).json({ data: clients });
+            }
+            case 'save_client': {
+                let clients = await db.get(DB_KEYS.CLIENTS) || [];
+                const index = clients.findIndex(c => c.id === payload.id);
+                if (index > -1) {
+                    clients[index] = payload;
+                } else {
+                    clients.push({ ...payload, id: payload.id || Date.now() });
+                }
+                await db.set(DB_KEYS.CLIENTS, clients);
+                return res.status(200).json({ data: payload });
+            }
+            case 'delete_client': {
+                let clients = await db.get(DB_KEYS.CLIENTS) || [];
+                const updatedClients = clients.filter(c => c.id !== payload.id);
+                await db.set(DB_KEYS.CLIENTS, updatedClients);
+                return res.status(200).json({ success: true });
+            }
+             case 'get_unit_overrides': {
+                const overrides = await db.get(DB_KEYS.UNIT_OVERRIDES) || [];
+                return res.status(200).json({ data: overrides });
+            }
+            case 'save_unit_override': {
+                const overridesArray = await db.get(DB_KEYS.UNIT_OVERRIDES) || [];
+                const overridesMap = new Map(overridesArray);
+                
+                const existing = overridesMap.get(payload.unit_id) || {};
+                const newOverride = { ...existing, ...payload };
+                overridesMap.set(payload.unit_id, newOverride);
+
+                await db.set(DB_KEYS.UNIT_OVERRIDES, Array.from(overridesMap.entries()));
+                return res.status(200).json({ success: true });
+            }
+
+            default:
+                return res.status(400).json({ error: `Unknown action: ${action}` });
+        }
+    } catch (error) {
+        console.error(`Error processing action "${action}":`, error);
+        return res.status(500).json({ error: `Server error during action: ${action}`, details: error.message });
+    }
 }
