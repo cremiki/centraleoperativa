@@ -2,13 +2,6 @@ import { Unit, Alarm, HistoricalDataPoint, User, Role, Report, ReportType, Clien
 import { apiProxy } from './apiProxy';
 
 // MOCK DATA
-const mockClients: Client[] = [
-    { id: 101, company: 'Logistics Inc.', contactPerson: 'Mario Rossi', phone: '+39 02 1234567', email: 'mario.rossi@logistics.inc' },
-    { id: 102, company: 'Transporti Veloci', contactPerson: 'Giulia Verdi', phone: '+39 06 7654321', email: 'giulia.verdi@transportiveloci.it' },
-    { id: 103, company: 'Courier Express', contactPerson: 'Luca Gialli', phone: '+39 055 9876543', email: 'luca.gialli@courierexpress.com' },
-    { id: 104, company: 'Alpine Haulers', contactPerson: 'Franco Moro', phone: '+39 011 4567890', email: 'franco.moro@alpinehaulers.com' }
-];
-
 const mockUsers: User[] = [
     { id: 1, name: 'Dante Salvetti', email: 'dante.salvetti@piramislocator.com', password: 'Piramis2025@', role: Role.OPERATOR },
     { id: 2, name: 'Miki Cresci', email: 'miki.cresci@piramislocator.com', password: 'Piramis2025@', role: Role.ADMINISTRATOR },
@@ -18,21 +11,16 @@ const mockDrivers = ['Luigi Bianchi', 'Marco Neri', 'Paolo Blu', 'Sergio Leone',
 const mockDriverPhones = ['+39 333 1234567', '+39 338 7654321', '+39 335 1122334', '+39 347 5566778', '+39 349 8899001', '+39 340 1212121'];
 
 const formatDateTimeForMapon = (date: Date): string => {
-    // Convert to ISO 8601 format in UTC (e.g., "2024-06-25T15:06:23Z").
-    // This is the unambiguous, standard way to represent time for APIs.
-    // We slice to remove milliseconds, which are not needed.
     return date.toISOString().slice(0, 19) + "Z";
 };
 
 class MaponService {
     private users: User[];
-    private clients: Client[];
     private reports: Report[];
     private unitsCache: Unit[] = [];
-
+    
     constructor() {
         this.users = mockUsers;
-        this.clients = mockClients;
         this.reports = [];
     }
     
@@ -52,22 +40,27 @@ class MaponService {
         return Promise.resolve(null);
     }
 
-    // The apiKey is no longer needed here. The backend proxy handles it.
     async getUnits(): Promise<Unit[]> {
         const maponApiUrl = `https://mapon.com/api/v1/unit/list.json?include=can,fuel,drivers,supply_voltage,relays,ignition,io_din`;
 
         try {
-            // The call to apiProxy no longer needs the key.
-            const apiResponse = await apiProxy.get(maponApiUrl);
+            // Fetch live data from Mapon and custom overrides from our KV store in parallel
+            const [apiResponse, unitOverridesResponse] = await Promise.all([
+                apiProxy.get(maponApiUrl),
+                apiProxy.post({ action: 'get_unit_overrides' })
+            ]);
+
+            const unitOverrides = new Map<number, Partial<Unit>>(unitOverridesResponse.data || []);
+            const clients = await this.getClients();
 
             if (apiResponse.data && Array.isArray(apiResponse.data.units)) {
                 const liveUnits: Unit[] = apiResponse.data.units.map((apiUnit: any, index: number) => {
-                    const client = this.clients[index % this.clients.length];
+                    const client = clients[index % clients.length];
                     const lastUpdate = apiUnit.last_update ? new Date(apiUnit.last_update).toISOString() : new Date(0).toISOString();
                     const ignitionState = apiUnit.ignition?.state === 1 || false;
                     const driverIsReal = !!apiUnit.drivers?.[0]?.name;
 
-                    return {
+                    const baseUnit: Unit = {
                         unit_id: apiUnit.unit_id,
                         number: apiUnit.number || apiUnit.label || `Veicolo ${apiUnit.unit_id}`,
                         model: apiUnit.vehicle_title || 'Modello sconosciuto',
@@ -90,6 +83,9 @@ class MaponService {
                         io_din: apiUnit.io_din,
                         isMock: !driverIsReal,
                     };
+                    
+                    const overrides = unitOverrides.get(baseUnit.unit_id);
+                    return { ...baseUnit, ...overrides };
                 });
                 this.unitsCache = liveUnits;
                 return liveUnits;
@@ -103,8 +99,14 @@ class MaponService {
             throw error; 
         }
     }
+    
+    async updateUnit(unitData: Partial<Unit>): Promise<void> {
+        if (!unitData.unit_id) {
+            return Promise.reject(new Error("Unit ID is required to update a unit."));
+        }
+        await apiProxy.post({ action: 'save_unit_override', payload: unitData });
+    }
 
-    // The apiKey is no longer needed here. The backend proxy handles it.
     async getAlarms(from: Date, till: Date): Promise<Alarm[]> {
         const fromFormatted = formatDateTimeForMapon(from);
         const tillFormatted = formatDateTimeForMapon(till);
@@ -141,7 +143,6 @@ class MaponService {
         }
     }
     
-    // USER MANAGEMENT (MOCK)
     getUsers(): Promise<User[]> {
         return Promise.resolve(this.users.map(u => {
             const { password, ...userWithoutPassword } = u;
@@ -166,27 +167,20 @@ class MaponService {
         return Promise.resolve();
     }
     
-    // CLIENT MANAGEMENT (MOCK)
-    getClients(): Promise<Client[]> {
-        return Promise.resolve([...this.clients]);
+    async getClients(): Promise<Client[]> {
+        const response = await apiProxy.post({ action: 'get_clients' });
+        return response.data || [];
     }
     
-    updateClient(client: Client): Promise<Client> {
-        const index = this.clients.findIndex(c => c.id === client.id);
-        if (index > -1) {
-            this.clients[index] = client;
-        } else {
-            this.clients.push({ ...client, id: client.id || Date.now() });
-        }
-        return Promise.resolve(client);
+    async updateClient(client: Client): Promise<Client> {
+       const response = await apiProxy.post({ action: 'save_client', payload: client });
+       return response.data;
     }
 
-    deleteClient(clientId: number): Promise<void> {
-        this.clients = this.clients.filter(c => c.id !== clientId);
-        return Promise.resolve();
+    async deleteClient(clientId: number): Promise<void> {
+        await apiProxy.post({ action: 'delete_client', payload: { id: clientId } });
     }
     
-    // MOCK history, reports etc.
     getUnitHistory(unitId: number, from: Date, to: Date): Promise<HistoricalDataPoint[]> {
         return new Promise(resolve => {
             const history: HistoricalDataPoint[] = [];
