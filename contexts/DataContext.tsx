@@ -84,7 +84,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Key is no longer needed
                 const newAlarms = await maponService.getAlarms(fromTime, now);
                 
-                lastAlarmCheck.current = now;
+                // Create a 30-second overlap for the next poll to prevent missing boundary events
+                // due to potential API replication delays.
+                const nextCheckTime = new Date(now.getTime() - 30 * 1000);
+                lastAlarmCheck.current = nextCheckTime;
 
                 if (newAlarms.length > 0) {
                     setAlarms(prevAlarms => {
