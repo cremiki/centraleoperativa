@@ -40,7 +40,8 @@ export default async function handler(req, res) {
 
   try {
     // 4. Perform the fetch call from the server to the Mapon API.
-    const maponResponse = await fetch(finalUrl);
+    // Added { cache: 'no-store' } to prevent any potential caching issues.
+    const maponResponse = await fetch(finalUrl, { cache: 'no-store' });
     const responseBody = await maponResponse.text(); // Read body once
 
     // Try to parse as JSON, but handle cases where it might not be
