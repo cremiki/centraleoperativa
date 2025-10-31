@@ -93,9 +93,17 @@ async function handleMaponProxy(req, res) {
 async function handleDataPersistence(req, res) {
     // PRE-EMPTIVE CHECK: Ensure KV store is configured before proceeding.
     if (!process.env.KV_URL || !process.env.KV_REST_API_TOKEN) {
-        console.error("KV Environment variables are not set.");
+        console.error("Vercel KV environment variables are not set.");
+        const detailedMessage = `Server configuration error: The data persistence service (Vercel KV) is not connected. 
+Action Required (Administrator): 
+1. Go to your project dashboard on Vercel.
+2. Navigate to the 'Storage' tab.
+3. Create a new 'KV' database.
+4. Click 'Connect Project' to link the database. This will set the required environment variables automatically.`;
+        
         return res.status(503).json({ 
-            message: "Server configuration error: The data persistence service is not configured. Please set up the KV database and connect it to this project.", 
+            message: "Data persistence service is not configured.", 
+            details: detailedMessage,
             code: 503 
         });
     }
@@ -162,7 +170,32 @@ async function handleDataPersistence(req, res) {
                 const overridesMap = new Map(overridesArray);
                 
                 const existing = overridesMap.get(payload.unit_id) || {};
-                const newOverride = { ...existing, ...payload };
+
+                // We receive the full unit object in the payload, which includes stale live data.
+                // We must extract ONLY the fields that are user-editable to avoid persisting
+                // old location/speed/etc. data.
+                const userOverridableFields = {
+                    number: payload.number,
+                    model: payload.model,
+                    driver: payload.driver,
+                    driverPhone: payload.driverPhone,
+                    clientId: payload.clientId,
+                };
+
+                // Any manual edit means the data is no longer "mock" in our application's context.
+                // We explicitly set isMock to false to override the default mock status.
+                userOverridableFields.isMock = false;
+
+                // Filter out any keys where the value is undefined so we don't save them.
+                Object.keys(userOverridableFields).forEach(key => {
+                    if (userOverridableFields[key] === undefined) {
+                        delete userOverridableFields[key];
+                    }
+                });
+
+                // Merge with any pre-existing overrides for this unit, giving precedence to the new changes.
+                const newOverride = { ...existing, ...userOverridableFields };
+
                 overridesMap.set(payload.unit_id, newOverride);
 
                 await kv.set(DB_KEYS.UNIT_OVERRIDES, Array.from(overridesMap.entries()));
