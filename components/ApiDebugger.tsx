@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { maponService } from '../services/maponService';
 import { Unit } from '../types';
 
+const isResponseEmpty = (data: any): boolean => {
+    if (!data) return true;
+    if (typeof data !== 'object') return false; // Should not happen with our proxy fix
+    if (Array.isArray(data.data) && data.data.length === 0) return true;
+    if (data.data?.alerts && Array.isArray(data.data.alerts) && data.data.alerts.length === 0) return true;
+    return false;
+};
+
 export const ApiDebugger: React.FC = () => {
     // State for unit testing
     const [unitLoading, setUnitLoading] = useState(false);
@@ -92,10 +100,14 @@ export const ApiDebugger: React.FC = () => {
                     </button>
                     <div className="mt-4 bg-gray-800 rounded-lg p-4 min-h-[200px] font-mono text-sm overflow-x-auto">
                         {alarmLoading && <p className="text-gray-400">Loading...</p>}
-                        {alarmError && <p className="text-red-400">Error: {alarmError}</p>}
+                        {alarmError && <p className="text-red-400">Error: Failed to connect to the backend service. Please check the network connection and backend status. Details: {alarmError}</p>}
                         {alarmData && (
                             <div>
-                                <p className="text-green-400 mb-2">Success! Received a response for alarms.</p>
+                                {isResponseEmpty(alarmData) ? (
+                                    <p className="text-yellow-400">Connection successful, but no alarms were found in the specified time window.</p>
+                                ) : (
+                                    <p className="text-green-400 mb-2">Success! Received a response for alarms.</p>
+                                )}
                                 <pre className="whitespace-pre-wrap break-all">{JSON.stringify(alarmData, null, 2)}</pre>
                             </div>
                         )}
