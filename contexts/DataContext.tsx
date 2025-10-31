@@ -41,16 +41,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(true);
         setError(null);
         try {
-            // The API key is no longer passed from the frontend.
-            const [fetchedUnits, fetchedClients] = await Promise.all([
-                maponService.getUnits(),
-                maponService.getClients()
-            ]);
+            // Fetch critical data first to render the map
+            const fetchedUnits = await maponService.getUnits();
             setUnits(fetchedUnits);
+
+            // Then fetch secondary data. If this fails, the app is still usable.
+            const fetchedClients = await maponService.getClients();
             setClients(fetchedClients);
+            
         } catch (e: any) {
-            console.error("Initial data fetch failed:", e.message);
-            setError(e.message || 'Failed to fetch initial data. Check backend configuration.');
+            console.error("Data fetch failed:", e.message);
+            // This error will now be more specific to what failed (either units or clients)
+            setError(e.message || 'Failed to fetch data. Check backend configuration.');
         } finally {
             setLoading(false);
         }
