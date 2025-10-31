@@ -2,8 +2,8 @@
 export default {
   content: [
     "./index.html",
-    "./*.{js,ts,jsx,tsx}",
-    "./{components,contexts,pages,services}/**/*.{js,ts,jsx,tsx}",
+    "./*.tsx", // Handles root .tsx files like App.tsx and index.tsx
+    "./{components,contexts,pages,services}/**/*.{ts,tsx}", // Handles all subdirectories
   ],
   theme: {
     extend: {},
