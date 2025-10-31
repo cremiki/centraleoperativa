@@ -92,8 +92,6 @@ async function handleMaponProxy(req, res) {
 // --- Data Persistence Logic (for POST requests) ---
 async function handleDataPersistence(req, res) {
     // PRE-EMPTIVE CHECK: Ensure KV store is configured before proceeding.
-    // This prevents crashes from trying to import/use the @vercel/kv library
-    // when its required environment variables are missing.
     if (!process.env.KV_URL || !process.env.KV_REST_API_TOKEN) {
         console.error("KV Environment variables are not set.");
         return res.status(503).json({ 
@@ -102,11 +100,21 @@ async function handleDataPersistence(req, res) {
         });
     }
 
+    let kv;
+    try {
+        // Isolate the dynamic import. If this fails, it's a critical dependency issue.
+        const kvModule = await import('@vercel/kv');
+        kv = kvModule.kv;
+    } catch (importError) {
+        console.error("Fatal Error: Failed to dynamically import '@vercel/kv'. This might be an issue with the deployment environment or package installation.", importError);
+        return res.status(500).json({
+            message: "Server runtime error: Could not load the data persistence library. Please check the server logs for more details.",
+            code: 500,
+        });
+    }
+
     let actionForLogging; // For logging purposes in the catch block
     try {
-        // DYNAMIC IMPORT: Load the KV library only when we know it's configured.
-        const { kv } = await import('@vercel/kv');
-        
         if (!req.body || typeof req.body !== 'object') {
             return res.status(400).json({ message: 'Request body is missing or is not a valid JSON object.', code: 400 });
         }
@@ -167,8 +175,8 @@ async function handleDataPersistence(req, res) {
     } catch (error) {
         console.error(`Error processing action "${actionForLogging || 'unknown'}":`, error);
         if (error instanceof TypeError) {
-             return res.status(400).json({ message: 'Invalid request body format. Expected a JSON object.', code: 400 });
+             return res.status(400).json({ message: 'Invalid request body format. Make sure it is a valid JSON object.', code: 400, details: error.message });
         }
-        return res.status(500).json({ message: error.message || `An unexpected server error occurred during action: ${actionForLogging}`, code: 500 });
+        return res.status(500).json({ message: `An unexpected server error occurred during action: ${actionForLogging || 'unknown'}.`, code: 500, details: error.message });
     }
 }
